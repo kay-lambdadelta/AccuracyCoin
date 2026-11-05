@@ -3,7 +3,7 @@ AccuracyCoin is a large collection of NES accuracy tests on a single NROM cartri
 
 This ROM was designed for an NTSC console with an RP2A03G CPU and RP2C02G PPU. Some tests might be automatically skipped on hardware with a different revision.
 
-This ROM currently has 146 tests. These tests print "PASS" or "FAIL" on screen, and in the event of a failure, this ROM also provides an error code. In addition to those tests, this ROM also has 5 tests labeled "DRAW", which don't actually test for anything; rather, they simply print information on screen.
+This ROM currently has 147 tests. These tests print "PASS" or "FAIL" on screen, and in the event of a failure, this ROM also provides an error code. In addition to those tests, this ROM also has 5 tests labeled "DRAW", which don't actually test for anything; rather, they simply print information on screen.
 
 Here's an example of the menu in this ROM shown on an emulator failing a test, passing others, a few tests on screen haven't been run yet, and a test marked to be skipped. (The cursor is currently next to the "Dummy Read Cycles" test.)
 
@@ -238,15 +238,15 @@ For more information, I recommend reading the fully commented assembly code for 
   4: Reading from the controller port should have some bits that are open bus. These bits are different depending on the model of the console.  
 
 ### DMC DMA + OAM DMA
-  1: The DMC DMA timing in your emulator is off.  
+  1: The DMC DMA timing in your emulator is off with sample rate %1110.  
   2: The overlapping DMAs did not spend the correct number of CPU cycles.  
 
 ### Explicit DMA Abort
-  1: The DMC DMA timing in your emulator is off.  
+  1: The DMC DMA timing in your emulator is off with sample rate %1110.  
   2: The aborted DMAs did not spend the correct number of CPU cycles.  
 
 ### Implicit DMA Abort
-  1: The DMC DMA timing in your emulator is off.  
+  1: The DMC DMA timing in your emulator is off with sample rate %1110.  
   2: The aborted DMAs did not spend the correct number of CPU cycles.  
   3: The 1-cycle DMA should not get delayed by a write cycle, rather it just shouldn't occur in that case.  
   4: If the sample was set to keep looping, the DMC DMA timing in your emulator is off.  
@@ -394,7 +394,7 @@ For more information, I recommend reading the fully commented assembly code for 
 
 ### Instruction Timing
   1: The DMA should update the data bus.  
-  2: The DMA timing is not accurate enough to test this.  
+  1: The DMC DMA timing in your emulator is off with sample rate %1110.  
   3: JSR should take 6 CPU cycles.  
   4: RTS should take 6 CPU cycles.  
   5: BRK should take 7 CPU cycles.  
@@ -490,6 +490,25 @@ For more information, I recommend reading the fully commented assembly code for 
 
 ### DMC Reload Timing
   1: Writing to $4010 as the DMC timer resets should cause the timer to reload using the new value.  
+
+### DMC Playback Rate
+  1: The DMA should update the data bus.  
+  2: Sample rate %0000 should take 3424 CPU cycles before the DMC DMA occurs.  
+  3: Sample rate %0001 should take 3040 CPU cycles before the DMC DMA occurs.  
+  4: Sample rate %0010 should take 2720 CPU cycles before the DMC DMA occurs.  
+  5: Sample rate %0011 should take 2560 CPU cycles before the DMC DMA occurs.  
+  6: Sample rate %0100 should take 2288 CPU cycles before the DMC DMA occurs.  
+  7: Sample rate %0101 should take 2032 CPU cycles before the DMC DMA occurs.  
+  8: Sample rate %0110 should take 1808 CPU cycles before the DMC DMA occurs.  
+  9: Sample rate %0111 should take 1712 CPU cycles before the DMC DMA occurs.  
+  A: Sample rate %1000 should take 1520 CPU cycles before the DMC DMA occurs.  
+  B: Sample rate %1001 should take 1280 CPU cycles before the DMC DMA occurs.  
+  C: Sample rate %1010 should take 1136 CPU cycles before the DMC DMA occurs.  
+  D: Sample rate %1011 should take 1024 CPU cycles before the DMC DMA occurs.  
+  E: Sample rate %1100 should take 848 CPU cycles before the DMC DMA occurs.  
+  F: Sample rate %1101 should take 672 CPU cycles before the DMC DMA occurs.  
+  G: Sample rate %1110 should take 576 CPU cycles before the DMC DMA occurs.  
+  H: Sample rate %1111 should take 432 CPU cycles before the DMC DMA occurs.  
 
 ## Page 16: Power On State
 
@@ -818,6 +837,10 @@ Some tests have multiple acceptable behaviors that are tested for in this ROM. T
   1: The controller was read the way a US-released NES / AV Famicom should read controllers.  
   2: The controller was read the way a Famicom should read controllers.  
 
+### DMA Landing on Write
+  1: The DMC Load DMA occurred after 2 APU cycles. (The common behavior)  
+  2: The DMC Load DMA occurred after 3 APU cycles. (The uncommon behavior)  
+  
 ### PPU Read Buffer
   E: The Picture Processing Unit behaved like revision E or earlier.  
   G: The Picture Processing Unit behaved like revision G or earlier.  

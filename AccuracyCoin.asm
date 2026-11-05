@@ -318,7 +318,7 @@ result_MisalignedOAM2Addr = $495
 
 result_DMALandingOnWrite = $496
 result_DMCReloadTiming = $497
-
+result_DMCPlaybackRate = $498
 
 result_DrawTest = $03FF	; page 3 omits the test from the all-test-result-table.
 
@@ -734,6 +734,7 @@ Suite_APUTiming:
 	table "Controller Clocking",      $FF, result_ControllerClocking,     TEST_ControllerClocking
 	.byte $FF
 
+	;; CPU Behavior 2 ;;
 Suite_CPUBehavior2:
 	.byte "CPU Behavior 2", $FF
 	table "Instruction Timing",   $FF, result_InstructionTiming, TEST_InstructionTiming
@@ -743,6 +744,7 @@ Suite_CPUBehavior2:
 	table "Internal Data Bus",    $FF, result_InternalDataBus,   TEST_InternalDataBus
 	table "DMA Landing on Write", $FF, result_DMALandingOnWrite, TEST_DMALandingOnWrite
 	table "DMC Reload Timing",    $FF, result_DMCReloadTiming,   TEST_DMCReloadTiming
+	table "DMC Playback Rate",    $FF, result_DMCPlaybackRate,   TEST_DMCPlaybackRate
 	.byte $FF
 
 	;; Power On State ;;
@@ -821,6 +823,7 @@ Suite_AdvancedSpriteEval:
 	table "Stale Sprite Shift Regs", $FF, result_StaleSpriteShiftRegs, TEST_StaleSpriteShiftRegs
 	table "Frozen OAM2 Increment",   $FF, result_FrozenOAM2Inc,        TEST_FrozenOAM2Inc
 	table "Misaligned OAM2 Address", $FF, result_MisalignedOAM2Addr,   TEST_MisalignedOAM2Addr
+
 	.byte $FF
 
 
@@ -1445,6 +1448,7 @@ TEST_DMA_Plus_2002R__putSync:        ; Either way, we are now synced with a put 
 	BMI FAIL_DMA_Plus_2002R ; If the VBlank flag was set, you fail the test this time for real.
 	
 	;; END OF TEST ;;
+Print_3APUCycleText:
 	JSR Test_DMA_Plus_2002_Cleanup
 	JSR WaitForVBlank
 	LDA <RunningAllTests
@@ -2680,13 +2684,13 @@ TEST_2007StressTest_Exit:
 	;
 	;;;;;;;;;;;
 	;
-	; S┌────┐Q
+	; R┌────┐Q
 	;  │ SR │
-	; R└────┘/Q
+	; S└────┘/Q
 	;
 	; This is an SR latch.
-	; If S is ever true, then Q is set to be false.
-	; If R is ever true, then Q is set to be true.
+	; If S is ever true, then Q is set to be true.
+	; If R is ever true, then Q is set to be false.
 	; The SR latch will hold its state until either S or R are true. 
 	; This means that S could be true for a very brief amount of time, and Q will be false until R is ever true.
 	; At which point, Q will be true until S is ever true.
@@ -3201,8 +3205,7 @@ TEST_DMALandingOnWrite:
 	
 	;;; Test 6 [DMA Landing on Write]: Load DMAs can have a 4 cycle delay ;;;
 	; NOTE: Some CPU's have been seen to take an extra APU cycle for the Load DMA to occur.
-	; As of writing this test, I am entirely out of space in the ROM, so I don't have room to verify if this is running on one of those CPU's.
-	; So this test is known to fail on those consoles, and as soon as I save some more bytes, I'll try and fix this issue with this test.
+	; If you fail this error code, we'll try again with the additional APU cycle.
 	LDA #$0                          ;
 	STA $4015                        ;
 	JSR Clockslide_1000              ;
@@ -3211,7 +3214,7 @@ TEST_DMALandingOnWrite:
 	LDA #$10                         ; [put] [get]
 	STA $4015                        ; [put] [get] [put] [GET]
 	LDA $4000                        ; [put] [get] [put] [DMC DMA (get)]
-	BNE FAIL_DMALandingOnWrite1      ;
+	BNE FAIL_DMALandingOnWrite4Delay ;
 	INC <ErrorCode                   ;
 
 	;;; Test 7 [DMA Landing on Write]: Load DMAs can have a 3 cycle delay ;;;
@@ -3258,6 +3261,9 @@ TEST_DMALandingOnWrite:
 	JMP $3FFD                        ;
 	; STA ($81), Y (Write $10 to $4015)
 	; LDA <$A5 (Data bus = $E8)
+	
+FAIL_DMALandingOnWrite4Delay:        ; If you failed this specific test, then it's possible you are running this on a console revision that takes an extra APU cycle before the load DMA occurs.
+	JMP TEST_DMALandingOnWrite6Delay ; Let's run the rest of the error codes under that assumption.
 
 TEST_DMALandingOnWrite_BRK:
 
@@ -3316,13 +3322,218 @@ TEST_DMALandingOnWrite_BRK:
 	BNE FAIL_DMALandingOnWrite       ;	
 	
 	;; End Of Test ;;                ;
-	LDA #1                           ;
+	LDA #5                           ;
 	RTS                              ;	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 FAIL_DMALandingOnWrite:              ;
 	JMP FAIL_AndDisableAudioChannels ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+TEST_DMALandingOnWrite6Delay:
+	;;; Test 6 [DMA Landing on Write]: Load DMAs can have a 6 cycle delay. (alternate behavior) ;;;
+	; NOTE: Some CPU's have been seen to take an extra APU cycle for the Load DMA to occur. We're testing for one of these consoles now.
+	LDA #$0                          ;
+	STA $4015                        ;
+	JSR Clockslide_1000              ;
+	STA $4014                        ;
+	LDA <$00                         ; [get] [put] [get]
+	LDA #$10                         ; [put] [get]
+	STA $4015                        ; [put] [get] [put] [GET]
+	NOP                              ; [put] [get]
+	LDA $4000                        ; [put] [get] [put] [DMC DMA (get)]
+	BNE FAIL_DMALandingOnWrite       ; If you fail this one, then you simply fail.
+	INC <ErrorCode                   ;
+
+	JSR Print_3APUCycleText
+
+	;;; Test 7 [DMA Landing on Write]: Load DMAs can have a 5 cycle delay (alternate behavior) ;;;
+	LDA #0                           ;
+	STA $4015                        ; disable DMC
+	JSR Clockslide_1000              ;
+	
+	LDX #1
+	STA $4014                        ;
+	LDA #$10                         ; [get] [put]
+	STA $4015                        ; [get] [put] [get] [PUT]
+	LDA $3FFF,X                      ; [get] [put] [get] [put] [DMC DMA (get)]
+FAIL_DMALandingOnWrite_BNE:          ; (I make a BNE FAIL land here so I can re-use this BNE to the actual fail that was out of range from the first BNE.)
+	BNE FAIL_DMALandingOnWrite       ; 
+	INC <ErrorCode                   ;
+	
+	;;; Test 8 [DMA Landing on Write]: Load DMAs also cannot land on write cycles ;;;
+	LDA #0                           ;
+	STA $4015                        ; disable DMC
+	JSR WaitForFrameCounterIRQFlag   ;
+	LDA #$10                         ;
+	STA $4014                        ; Trigger an OAM DMA to align with a Get cycle next.
+	LDA $00                          ; delay 3 cycles to sync with put cycle.
+	STA $4015                        ; [Opcode (put)] [Operand (get)] [Operand (put)] [Write (get)]
+	NOP                              ; [Opcode (put)] [Dummy (get)]
+	STA $4015                        ; [Opcode (put)] [Operand (get)] [Operand (put)] {Write (get)} This delays the DMA by a cycle, and does NOT read from $4015
+	LDA $4015                        ;
+	AND #$40                         ; Filter for the Frame Counter IRQ Flag
+	BEQ FAIL_DMALandingOnWrite       ;
+	INC <ErrorCode                   ;
+
+	;;; Test 9 [DMA Landing on Write]: Load DMAs that get delayed by 1 cycle take 4 cycles ;;;
+	JSR DMASync_50CyclesRemaining    ;
+	JSR Clockslide_50                ;
+	; 4 cycle DMA
+	; [Put cycle]
+	; Next DMA in 428 cycles.
+	LDA #$0                          ; +2 cycles
+	STA $4015                        ; +4 cycles
+	JSR ClockslideFromWord           ; Stall
+	.word 422
+	JSR ClockslideFromWord           ; Stall
+	.word 432
+	; A DMA does not happen here, but the timer is reset here. 432 cycles to go.
+	LDA #$4F                         ; +2 cycles
+	STA $4010                        ; +4 cycles
+	LDA #$10                         ; +2 cycles
+	STA $4015                        ; +4 cycles
+	NOP                              ; +2 cycles
+	STA $5000                        ; +4 cycles
+	                                 ; +4 cycle long DMA
+	                                 ; Next DMA in 411 cycles
+	JSR ClockslideFromWord           ; Stall for 407 cycles
+	.word 407                        ; ^
+	LDA $4000                        ; read from open bus immediately after the DMA.
+	BNE FAIL_DMALandingOnWrite_BNE   ;	
+	
+	;; End Of Test ;;                ;
+	LDA #9                           ;
+	RTS                              ;	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+FAIL_DMCPlaybackRate:               ;
+	JMP TEST_Fail                   ;
+	                                ;
+TEST_DMCPlaybackRate:               ;
+	;;; Test 1 [DMC Playback Rate]: Do you pass DMA + Open Bus? ;;;
+	JSR TEST_DMA_Plus_OpenBus       ;
+	LDX #1                          ; The DMA Plus Open Bus test increments the error code, so let's fix it real quick.
+	STX <ErrorCode                  ;
+	CMP #1                          ;
+	BNE FAIL_DMCPlaybackRate        ;
+	INC <ErrorCode                  ;
+	LDX #0                          ; Reset X for the upcoming loop.
+	                                ;
+	LDA #$20                        ; This upcoming loop needs to stall for very precise amounts of CPU cycles.
+	STA <$60                        ; Unfortunately, this precise amount needs to be different in each iteration of this loop.
+	LDA #LOW(ClockslideFromWord)    ; My solution involves a `JSR ClockslideFromWord` in RAM, and I can just change the arguments in the loop.
+	STA <$61                        ;
+	LDA #HIGH(ClockslideFromWord)   ;
+	STA <$62                        ;
+	LDA #$60                        ;
+	STA <$65                        ;
+	                                ;
+	;;; Test 2 through H [DMC Playback Rate]: Does the DMC take the correct number of APU cycles between DMA's when the sample rate is set to the value of the X register? ;;;
+	                                ;
+TEST_DMCPlaybackRate_Loop:          ;
+	LDA DMCPR_DelayLO, X            ;
+	STA <$63                        ; The low byte of the clockslide
+	LDA DMCPR_DelayHI, X            ;
+	STA <$64                        ; the high byte of the clockslide
+	                                ;
+	JSR DMASync_50CyclesRemaining   ;
+	TXA                             ;
+	ORA #$40                        ;
+	STA $4010                       ; By this point, the DMC timer/lfsr has been refreshed already, so the write to $4010 won't affect the upcoming DMA.
+	JSR Clockslide_42               ;
+	; DMA happens here.
+	JSR $0060                       ; This leads to a ClockslideFromWord, which will stall for precisely the amount determined by DMCPR_DelayHI and DMCPR_DelayLO.
+	LDA $4000                       ; The DMA should land just before the read from open bus.
+	BNE FAIL_DMCPlaybackRate        ;
+	                                ;
+	INC <ErrorCode                  ;
+	                                ;
+	INX                             ;
+	CPX #$10                        ;
+	BNE TEST_DMCPlaybackRate_Loop   ;
+	                                ;
+	LDA #1                          ;
+	RTS                             ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+DMCPR_Overhead = 19                 ; How many cycles are consumed by jumping to RAM and back?
+DMCPR_DelayHI:                      ;
+	.byte HIGH(3424-DMCPR_Overhead) ;
+	.byte HIGH(3040-DMCPR_Overhead) ;
+	.byte HIGH(2720-DMCPR_Overhead) ;
+	.byte HIGH(2560-DMCPR_Overhead) ;
+	.byte HIGH(2288-DMCPR_Overhead) ;
+	.byte HIGH(2032-DMCPR_Overhead) ;
+	.byte HIGH(1808-DMCPR_Overhead) ;
+	.byte HIGH(1712-DMCPR_Overhead) ;
+	.byte HIGH(1520-DMCPR_Overhead) ;
+	.byte HIGH(1280-DMCPR_Overhead) ;
+	.byte HIGH(1136-DMCPR_Overhead) ;
+	.byte HIGH(1024-DMCPR_Overhead) ;
+	.byte HIGH(848-DMCPR_Overhead)  ;
+	.byte HIGH(672-DMCPR_Overhead)  ;
+	.byte HIGH(576-DMCPR_Overhead)  ;
+	.byte HIGH(432-DMCPR_Overhead)  ;
+	                                ;
+DMCPR_DelayLO:                      ;
+	.byte LOW(3424-DMCPR_Overhead)  ;
+	.byte LOW(3040-DMCPR_Overhead)  ;
+	.byte LOW(2720-DMCPR_Overhead)  ;
+	.byte LOW(2560-DMCPR_Overhead)  ;
+	.byte LOW(2288-DMCPR_Overhead)  ;
+	.byte LOW(2032-DMCPR_Overhead)  ;
+	.byte LOW(1808-DMCPR_Overhead)  ;
+	.byte LOW(1712-DMCPR_Overhead)  ;
+	.byte LOW(1520-DMCPR_Overhead)  ;
+	.byte LOW(1280-DMCPR_Overhead)  ;
+	.byte LOW(1136-DMCPR_Overhead)  ;
+	.byte LOW(1024-DMCPR_Overhead)  ;
+	.byte LOW(848-DMCPR_Overhead)   ;
+	.byte LOW(672-DMCPR_Overhead)   ;
+	.byte LOW(576-DMCPR_Overhead)   ;
+	.byte LOW(432-DMCPR_Overhead)   ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+CopyOAMToPage5:            ;
+	LDX #0                 ;
+CopyOAMToPage5Loop:        ;
+	LDA $2004              ; read the value from OAM
+	STA $2004              ; increment OAM Address.
+	STA $500,X             ; store the value in RAM
+	INX                    ; Increment X until it overflows
+	BNE CopyOAMToPage5Loop ;
+	RTS                    ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+ClearNametable2_WithF0:
+	LDA #$F0
+	.byte $2C ; BIT Absolute. (skip the LDA #24)
+ClearNametable2_With24:
+	LDA #$24
+	.byte $2C ; BIT Absolute. (skip the LDA #0)
+ClearNametable2:
+	LDA #0
+ClearNametable2_s:
+	JSR SetPPUADDRFromWord
+	.byte $2C, $00
+	LDY #$C0
+	LDX #4
+TEST_RMW2007_ClearNametable2Loop:
+	STA $2007
+	DEY
+	BNE TEST_RMW2007_ClearNametable2Loop
+	DEX
+	BNE TEST_RMW2007_ClearNametable2Loop
+	LDA #$FF
+	LDY #$40
+	TEST_RMW2007_ClearNT2Loop2:
+	STA $2007
+	DEY
+	BNE TEST_RMW2007_ClearNT2Loop2	
+	RTS
+;;;;;;;
 
 	.bank 1
 	.org $A000	; This next line of code is located at address $A000 in the ROM.
@@ -7412,17 +7623,18 @@ MisalignedOAM_Test:
 	RTS
 ;;;;;;;
 
+FAIL_MisalignedOAM_Behavior_PLA:
+	PLA
+	PLA
 FAIL_MisalignedOAM_Behavior:
-	PLA
-	PLA
 	JMP FAIL_MisalignedOAM
 	
 TEST_MisalignedOAM_Evaluate:
 	JSR Clockslide_500			; Wait long enough for the ppu to draw every scanline in which these objects are relevant.
 	LDA $2002					; Read PPUSTATUS, putting the sprite overflow flag in bit 5.
 	AND #$20 					; mask away bit 5. The result should be A = $20, since the sprite overflow flag *should* be set.
-	BEQ FAIL_MisalignedOAM_Behavior
-	INC <ErrorCode	
+	BEQ FAIL_MisalignedOAM_Behavior_PLA
+	INC <ErrorCode
 	RTS
 ;;;;;;;
 	
@@ -8327,13 +8539,7 @@ APURegActivation_Continue:
 	
 	;;; Test 6 [APU Register Activation]: The DMA can read from the APU registers when the CPU is executing out of page $40? ;;;
 	; Step 1: copy OAM to page 2.
-	LDX #0
-TEST_APURegActivation_Test5Loop:
-	LDA $2004
-	STA $2004 ; increment OAM Address.
-	STA $500,X
-	INX
-	BNE TEST_APURegActivation_Test5Loop
+	JSR CopyOAMToPage5
 	; Instead of making a 256 byte large look up table, I'm going to check each row individually. The result should match that table printed out above in the Test 4 description.
 	; X already equals zero.
 	LDY #0
@@ -8476,12 +8682,7 @@ TEST_APURegActivation_Prep6Loop: ; And this loop makes address $280 through $2FF
 	JSR $3FFE	; Jump to $3FFE, as explained above.
 	;;;;;; A real big loop to read compare the values in OAM with the desired results.
 	LDX #0
-TEST_APURegActivation_Test6Loop:
-	LDA $2004
-	STA $2004 ; increment OAM Address.
-	STA $500,X
-	INX
-	BNE TEST_APURegActivation_Test6Loop	
+	JSR CopyOAMToPage5
 	
 	LDY #$0B	; Y loops back to $00 in $15 bytes
 TEST_APURegActivation_Eval_3:
@@ -8685,9 +8886,8 @@ TEST_DMCReloadTiming:
 	; - The timer is reloaded with a specific value, and counts down to zero. (Well- actually it's an LFSR, but it's way easier to visualize/emulate it as a counter counting down to zero.)
 	; - When it hits zero, it is reloaded with the value again.
 	; - It does this eight times, triggering a DMC DMA when it hits zero for the eighth time.
-	;    - Whether the DMC DMA happens immediately or with a delay is currently unknown as of writing this.
-	;    - That basically means that while the timing described by my comments could be wrong (as I assume no delay) the end result is still the same.
-	;    - Writing to $4010 `X` CPU cycles after the DMC DMA will result in the timer being reloaded with the value described by the test.
+	; 	- In other words, the RDY pin of the CPU is set on the cycle after this timer/LFSR is reloaded for the 8th time, indicating that all the bits of the shift register have been used.
+	;	- This timing was verified using visual 2A03, which until recently was speculated that there could be a delay between the timer expiring and the DMA occurring. But nope!
 	;
 	; In this loop, for every iteration, increment X.
 	; We delay by X CPU cycles relative to the moment the DMC timer reloads, but sync everything back up relative to when the DMA will occur.
@@ -12764,57 +12964,62 @@ PaletteRAM_PreRevG_SkipMSG:
 ;;;;;;;
 
 CalculateDMADuration:
-	; sync the DMC DMA to occur in 50 cycles.
-	LDY #0
-	JSR Clockslide_45
-CalculateDMADuration_Loop:
-	LDA $4000	;+4
-	BEQ CalculateDMADuration_End ;+2
-	; 2+4+2+3 (+4) = 15.
-	; 576 cycles between each DMA.
-	; 576 - 15 = 561
-	; if I stall for 560 cycles, I can read from open bus 1 cycle earlier in relation to the DMA each loop.
-	JSR ClockslideFromWord
-	.word 560
-	INY	; +2
+	                              ; sync the DMC DMA to occur in 50-N cycles.
+	                              ; If N = 0, then this would land directly on the read from $4000.
+	LDY #0                        ; Set Y to 0. The goal here is to calculate 'N' and store that in the Y register.
+	JSR Clockslide_45             ; Basically, we loop CalculateDMADuration_Loop until the DMC DMA lands on the $4000 read,
+CalculateDMADuration_Loop:        ; and every loop should land the DMC DMA 1 CPU cycle closer to the read from $4000.
+	LDA $4000	                  ; +4
+	BEQ CalculateDMADuration_End  ; +2
+	                              ; 2+4+2+3 (+4 from the DMA) = 15 CPU cycles from these instructions.
+	                              ; There are 576 cycles between each DMA with the chosen sample rate.
+	                              ; 576 - 15 = 561
+	                              ; if I stall for 560 cycles, I can read from open bus 1 cycle earlier in relation to the DMA each loop.
+	JSR ClockslideFromWord        ; This stalls for 560 CPU cycles.
+	.word 560                     ; Adding the +2 and +3 from the INY and JMP, we're ready for the next DMC DMA.
+	INY	                          ; +2
 	JMP CalculateDMADuration_Loop ;+3
-CalculateDMADuration_End:
-	RTS
-;;;;;;;
+CalculateDMADuration_End:         ; If branched here, Y holds the number of times we looped here, which is 'N', the number of CPU cycles we're trying to calculate.
+	RTS                           ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 CycleClockBegin:
-	JSR DMASync_50CyclesRemaining
-	; 50 cycles until the target DMA.	
-	LDA #$4E			; +2 cycles.
-	STA $4010			; +4 cycles. Make this sample loop, and use the SECOND FASTEST DMC rate.
-	JSR Clockslide_44	; [DMC DMA. + 4]
-	; 572 more cycles until the next DMA.
-	JSR Clockslide_500
-	JSR Clockslide_50
-	JSR Clockslide_16
-	RTS
-	
+	JSR DMASync_50CyclesRemaining ; Sync the CPU with a DMC DMA in 50 cycles.
+	                              ; 50 cycles until the target DMA.	
+	LDA #$4E                      ; +2 cycles.
+	STA $4010                     ; +4 cycles. Make this sample loop, and use the SECOND FASTEST DMC rate.
+	JSR Clockslide_44             ; After the RTS, [DMC DMA takes 4 cycles]
+	                              ; 572 more cycles until the next DMA.
+	JSR Clockslide_500            ; 72 more cycles
+	JSR Clockslide_50             ; 22 more cycles
+	JSR Clockslide_16             ; 6 more cycles.
+	RTS                           ; DMC DMA happens after this RTS.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 CycleClockEnd:
-	; 572-6 cycles to go until the next DMA.
-	SEI
-	JSR Clockslide_500
-	; 72-6 cycles to go. (We need to jump to CalculateDMADuration with 56 cycles remaining)
-	NOP
-	NOP
-	NOP
-	NOP
-	; 56 cycles to go:
-	JSR CalculateDMADuration
-	RTS
-;;;;;;;
+	                         ; The current goal is to jump to CalculateDMADuration such that the DMC DMA inside that subroutine occurs 'N' CPU cycles before the first read from address $4000...
+	                         ; ...where 'N' is the number of CPU cycles between returning from "CycleClockBegin" and reading the opcode of the JSR here (CycleClockEnd).
+	                         ; 566-N cycles to go until the next DMA.
+	SEI                      ; Prevent IRQ's anmd stuff. This takes 2 CPU cycles.
+	JSR ClockslideFromWord   ; We need to jump to CalculateDMADuration with 56-N cycles remaining
+	.word 508                ; Stall exactly long enough to make that happen.
+	JSR CalculateDMADuration ; After returning, the Y register will hold the value of 'N'.
+	RTS                      ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 CheckDMATiming:
-	JSR CycleClockBegin
-	NOP
-	NOP
-	JSR CycleClockEnd
-	RTS
-;;;;;;;
+	LDY #0                  ; Reset the Y register, in case we fail the timing test here.
+	JSR CycleClockBegin     ; I'm specifically using this subroutine right now, not for "stopwatch" purposes, rather I'm just setting up the DMC DMA with the correct sample rate.
+	JSR ClockslideFromWord  ; Stall until the DMC DMA would land on the read from $4000
+	.word 569               ; (Stall for 569 cycles, since the sample rate is currently set to trigger DMC DMA's 576 cycles apart)
+	LDA $4000               ; Read from open bus.
+	BNE CheckDMATiming_Fail ; If we didn't read "00", just leave.
+	JSR CycleClockBegin     ; Imagine a stopwatch starting the moment this JSR instruction returns.
+	NOP                     ; For this example, we'll make this four cycles long.
+	NOP                     ; We stall for four cycles.
+	JSR CycleClockEnd       ; Now imagine the stop watch halts the moment this JSR instruction begins. Naturally, there's not actually a "stopwatch" that can arbitrarily start and stop whenever.
+CheckDMATiming_Fail:        ; If your emulator hangs here, you might consider looking inside those subroutines.
+	RTS                     ; If this worked, the Y register holds the number of CPU cycles consumed by those two NOP instructions.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 FAIL_DMCDMAPlusOAMDMA:
 	LDA #0
@@ -19097,6 +19302,8 @@ DMASync_Loop:
 TEST_DoesTheDMAUpdateOpenBus:
 	; let's find out!
 	STA <Copy_A
+	LDA $4000
+	BEQ TEST_DoesTheDMA_Fail
 	LDA #$4F ; loop, max speed.
 	STA $4010
 	LDA #0
@@ -19127,34 +19334,6 @@ TEST_DoesTheDMA_Fail:
 	STA <result_DMCDMASync_PreTest
 	JMP DMASync
 ;;;;;;;;;;;;;;;	
-
-ClearNametable2_WithF0:
-	LDA #$F0
-	.byte $2C ; BIT Absolute. (skip the LDA #24)
-ClearNametable2_With24:
-	LDA #$24
-	.byte $2C ; BIT Absolute. (skip the LDA #0)
-ClearNametable2:
-	LDA #0
-ClearNametable2_s:
-	JSR SetPPUADDRFromWord
-	.byte $2C, $00
-	LDY #$C0
-	LDX #4
-TEST_RMW2007_ClearNametable2Loop:
-	STA $2007
-	DEY
-	BNE TEST_RMW2007_ClearNametable2Loop
-	DEX
-	BNE TEST_RMW2007_ClearNametable2Loop
-	LDA #$FF
-	LDY #$40
-	TEST_RMW2007_ClearNT2Loop2:
-	STA $2007
-	DEY
-	BNE TEST_RMW2007_ClearNT2Loop2	
-	RTS
-;;;;;;;
 
 	.org $FFC0
 	; 33 00s. This will be the DPCM "audio sample" played during the DMC DMA Sync loop. It should just be silence.
